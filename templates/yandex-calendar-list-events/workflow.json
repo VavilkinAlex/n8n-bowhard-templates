@@ -1,0 +1,136 @@
+{
+  "name": "Яндекс Календарь: список событий",
+  "nodes": [
+    {
+      "id": "1bfc55bd-e97f-4c71-b5e2-161afdc1d656",
+      "name": "Запрос событий",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "yandex-event-list",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {
+          "onlyRunIf": "=$json.headers['x-watchdog-token'] === 'REPLACE_WITH_YOUR_TOKEN'"
+        }
+      }
+    },
+    {
+      "id": "bebcc4f1-2773-4a13-82ca-f0a1730e4e0c",
+      "name": "Собрать запрос событий",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const body = ($(\"Запрос событий\").first().json.body) || {};\nconst allowed = {\n  \"Personal\": \"/calendars/YOUR-LOGIN%40yandex.ru/events-0000000/\",\n  \"Family\": \"/calendars/YOUR-LOGIN%40yandex.ru/events-0000000/\",\n  \"Birthdays\": \"/calendars/YOUR-LOGIN%40yandex.ru/events-0000000/\"\n};\nconst wanted = String(body.calendar || \"Personal\");\nconst path = allowed[wanted] || allowed[\"Personal\"];\n\nfunction stamp(date) {\n  const iso = date.toISOString();\n  return iso.slice(0, 4) + iso.slice(5, 7) + iso.slice(8, 10) + \"T\" + iso.slice(11, 13) + iso.slice(14, 16) + iso.slice(17, 19) + \"Z\";\n}\n\nfunction parseWhen(value, fallback) {\n  if (!value) return fallback;\n  const text = String(value);\n  const full = text.length === 10 && text.charAt(4) === \"-\" ? text + \"T00:00:00Z\" : text;\n  const date = new Date(full);\n  return isNaN(date.getTime()) ? fallback : date;\n}\n\nconst now = new Date();\nconst startDefault = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));\nconst start = parseWhen(body.from, startDefault);\nconst end = parseWhen(body.to, new Date(start.getTime() + 30 * 24 * 3600 * 1000));\n\nconst query = '<c:calendar-query xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">'\n  + '<d:prop><d:getetag/><c:calendar-data/></d:prop>'\n  + '<c:filter><c:comp-filter name=\"VCALENDAR\"><c:comp-filter name=\"VEVENT\">'\n  + '<c:time-range start=\"' + stamp(start) + '\" end=\"' + stamp(end) + '\"/>'\n  + '</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>';\n\nreturn [{ json: {\n  calendarName: wanted,\n  calendarPath: path,\n  range: { start: stamp(start), end: stamp(end) },\n  query: query\n} }];",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "5f166d57-9154-476a-864b-6fca4338efac",
+      "name": "Список событий",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "body": "={{ $json.query }}",
+        "contentType": "raw",
+        "genericAuthType": "httpBasicAuth",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Depth",
+              "value": "1"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/xml; charset=utf-8"
+            }
+          ]
+        },
+        "method": "REPORT",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "autodetect"
+            }
+          },
+          "timeout": 60000,
+          "webdavMethods": true
+        },
+        "rawContentType": "application/xml; charset=utf-8",
+        "sendBody": true,
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "url": "={{ 'https://caldav.yandex.ru' + $json.calendarPath }}"
+      }
+    },
+    {
+      "id": "a839fea6-0735-4647-a018-7a0df9b914ed",
+      "name": "Разобрать события",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const prepared = $(\"Собрать запрос событий\").first().json || {};\nconst xml = String(($json && $json.data) || \"\");\n\nconst events = [];\nfor (const chunk of xml.split(\"BEGIN:VEVENT\").slice(1)) {\n  const item = { summary: \"\", start: \"\", end: \"\", allDay: false, location: \"\", uid: \"\" };\n  for (let line of chunk.split(\"END:VEVENT\")[0].split(\"\\n\")) {\n    if (line.length && line.charCodeAt(line.length - 1) === 13) line = line.slice(0, -1);\n    const cut = line.indexOf(\":\");\n    if (cut < 0) continue;\n    const left = line.slice(0, cut).toUpperCase();\n    const value = line.slice(cut + 1).trim();\n    if (left.startsWith(\"SUMMARY\")) item.summary = value;\n    else if (left.startsWith(\"DTSTART\")) { item.start = value; item.allDay = left.indexOf(\"VALUE=DATE\") >= 0; }\n    else if (left.startsWith(\"DTEND\")) item.end = value;\n    else if (left.startsWith(\"LOCATION\")) item.location = value;\n    else if (left.indexOf(\"UID\") === 0) item.uid = value;\n  }\n  if (item.summary || item.start) events.push(item);\n}\n\nevents.sort((left, right) => String(left.start).localeCompare(String(right.start)));\n\nconst status = Number(($json && $json.statusCode) || 0);\nlet note = \"ответ получен\";\nif (status === 401) note = \"отказ в доступе — проверить пароль приложения для календаря\";\nelse if (status === 403) note = \"календарь отклонил запрос\";\nelse if (status !== 207) note = \"код \" + status;\n\nreturn [{ json: {\n  calendar: prepared.calendarName,\n  range: prepared.range,\n  count: events.length,\n  status: status,\n  note: note,\n  events: events.slice(0, 50)\n} }];",
+        "mode": "runOnceForAllItems"
+      }
+    }
+  ],
+  "connections": {
+    "Запрос событий": {
+      "main": [
+        [
+          {
+            "node": "Собрать запрос событий",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Собрать запрос событий": {
+      "main": [
+        [
+          {
+            "node": "Список событий",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Список событий": {
+      "main": [
+        [
+          {
+            "node": "Разобрать события",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  }
+}

@@ -1,0 +1,269 @@
+{
+  "name": "ДЕМО · Приём заявок с сайта в CRM и Telegram",
+  "nodes": [
+    {
+      "id": "32f22a67-f6cb-4a54-9802-10955a7b930d",
+      "name": "Заявка с сайта (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "site-lead",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "9a296193-5d2b-4081-8c49-4c359be7c612",
+      "name": "Нормализовать заявку",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "lead-name",
+              "name": "name",
+              "value": "={{ $json.body.name || \"не указано\" }}",
+              "type": "string"
+            },
+            {
+              "id": "lead-phone",
+              "name": "phone",
+              "value": "={{ $json.body.phone || \"не указано\" }}",
+              "type": "string"
+            },
+            {
+              "id": "lead-comment",
+              "name": "comment",
+              "value": "={{ $json.body.comment || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "lead-source",
+              "name": "source",
+              "value": "={{ $json.body.source || \"site\" }}",
+              "type": "string"
+            },
+            {
+              "id": "lead-received",
+              "name": "receivedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "5a473edb-f6a5-4b84-9dbd-e7b13bf09e53",
+      "name": "Сохранить в CRM (Google Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "authentication": "oAuth2",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "CRM — заявки (демо)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Заявки"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": [
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "comment",
+              "displayName": "comment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "receivedAt",
+              "displayName": "receivedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ]
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "0db08479-6cd5-4ca9-957d-9cea8515aba9",
+      "name": "Уведомить менеджера",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "REPLACE_WITH_YOUR_CHAT_ID",
+        "text": "=🔥 Новая заявка с сайта\n\nИмя: {{ $(\"Нормализовать заявку\").item.json.name }}\nТелефон: {{ $(\"Нормализовать заявку\").item.json.phone }}\nКомментарий: {{ $(\"Нормализовать заявку\").item.json.comment }}\nИсточник: {{ $(\"Нормализовать заявку\").item.json.source }}\nВремя: {{ $(\"Нормализовать заявку\").item.json.receivedAt }}",
+        "replyMarkup": "none"
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "147445f6-7259-4244-8dea-0f4e7ec5d9f9",
+      "name": "Ответ: заявка принята",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        896,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, message: \"Заявка принята\", lead: $(\"Нормализовать заявку\").item.json.name } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "af783201-8a75-4495-8bab-dab5b1e63c1b",
+      "name": "Ответ: ошибка обработки",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        896,
+        208
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { error: \"internal_error\", message: \"Не удалось обработать заявку. Мы уже разбираемся — попробуйте, пожалуйста, позже.\" } }}",
+        "options": {
+          "responseCode": 500
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Заявка с сайта (POST)": {
+      "main": [
+        [
+          {
+            "node": "Нормализовать заявку",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Нормализовать заявку": {
+      "main": [
+        [
+          {
+            "node": "Сохранить в CRM (Google Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Сохранить в CRM (Google Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Уведомить менеджера",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ответ: ошибка обработки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Уведомить менеджера": {
+      "main": [
+        [
+          {
+            "node": "Ответ: заявка принята",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ответ: ошибка обработки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  }
+}

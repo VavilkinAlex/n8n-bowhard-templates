@@ -1,0 +1,10 @@
+# Ничего лишнего: шаблоны n8n — это только workflow.json и README.md.
+node_modules/
+*.log
+.env
+.env.*
+secrets/
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini

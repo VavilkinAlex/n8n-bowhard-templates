@@ -1,0 +1,484 @@
+{
+  "name": "Видео: генерация клипа (ProxyAPI)",
+  "nodes": [
+    {
+      "id": "92a9a486-9f61-4352-82d0-62ca07992628",
+      "name": "Запрос видео",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        128
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-video",
+        "responseMode": "responseNode",
+        "options": {
+          "onlyRunIf": "={{ $json.headers['x-watchdog-token'] === 'REPLACE_WITH_YOUR_TOKEN' }}"
+        }
+      }
+    },
+    {
+      "id": "5778cd94-6f5a-4dd0-9610-c1b496661e4c",
+      "name": "Параметры",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        128
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "prompt",
+              "value": "={{ $json.body.prompt }}",
+              "type": "string"
+            },
+            {
+              "id": "p2",
+              "name": "model",
+              "value": "={{ $json.body.model || 'google/veo-3.1-lite' }}",
+              "type": "string"
+            },
+            {
+              "id": "p3",
+              "name": "duration",
+              "value": "={{ Number($json.body.duration || 4) }}",
+              "type": "number"
+            },
+            {
+              "id": "p4",
+              "name": "resolution",
+              "value": "={{ $json.body.resolution || '720p' }}",
+              "type": "string"
+            },
+            {
+              "id": "p5",
+              "name": "fileName",
+              "value": "={{ $json.body.fileName || ('clip-' + $now.format('yyyyMMdd-HHmmss')) }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "4fd36fff-98ba-41e8-a47f-d0916c93729a",
+      "name": "Создать задачу",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        448,
+        128
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.proxyapi.ru/v1/videos",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: $json.model, prompt: $json.prompt, duration: $json.duration, resolution: $json.resolution } }}",
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "5a543173-fcd0-44b5-821b-79b54df3ce5e",
+      "name": "Ждать",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        128
+      ],
+      "parameters": {
+        "amount": 10,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "15f4cf0b-01f4-4657-b1fc-5119e0470d8d",
+      "name": "Проверить статус",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        896,
+        128
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.polling_url || ('https://api.proxyapi.ru/v1/videos/' + $('Создать задачу').first().json.id) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "f366493a-04f9-44a0-a0f5-d11a0c1f5008",
+      "name": "Готово?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        48
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "completed"
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "1aee1c68-cb0d-45a7-9d3e-d06e6cf15bf4",
+      "name": "Скачать файл",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1344,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.proxyapi.ru/v1/videos/' + $('Создать задачу').first().json.id + '/content' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 300000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "f45b600d-4004-4bcc-86bd-a6e43e25b264",
+      "name": "На Яндекс Диск",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1568,
+        0
+      ],
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://webdav.yandex.ru/Video/' + $('Параметры').first().json.fileName + '.mp4' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 300000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "46cd0a6a-8af8-4cf0-aa87-8d3b67f94d71",
+      "name": "Итог",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1792,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "ok",
+              "value": "={{ $json.statusCode === 201 || $json.statusCode === 204 }}",
+              "type": "boolean"
+            },
+            {
+              "id": "s2",
+              "name": "status",
+              "value": "={{ Number($json.statusCode || 0) }}",
+              "type": "number"
+            },
+            {
+              "id": "s3",
+              "name": "diskPath",
+              "value": "={{ 'Video/' + $('Параметры').first().json.fileName + '.mp4' }}",
+              "type": "string"
+            },
+            {
+              "id": "s4",
+              "name": "prompt",
+              "value": "={{ $('Параметры').first().json.prompt }}",
+              "type": "string"
+            },
+            {
+              "id": "s5",
+              "name": "model",
+              "value": "={{ $('Параметры').first().json.model }}",
+              "type": "string"
+            },
+            {
+              "id": "s6",
+              "name": "seconds",
+              "value": "={{ $('Параметры').first().json.duration }}",
+              "type": "number"
+            },
+            {
+              "id": "s7",
+              "name": "jobId",
+              "value": "={{ $('Создать задачу').first().json.id }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "504aa056-7283-4c88-9b10-09b1d303852a",
+      "name": "Ответ",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2016,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      }
+    },
+    {
+      "id": "609979e1-f817-43c2-8857-f6882b2b4018",
+      "name": "Отказ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1344,
+        224
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "failed"
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "8351d462-eee9-4029-a8b2-76d27624f9ec",
+      "name": "Ответ об ошибке",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1568,
+        224
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, status: $json.status, error: $json.error || 'генерация не удалась', jobId: $json.id } }}"
+      }
+    },
+    {
+      "id": "8e586707-fa29-4021-93de-420070ee4555",
+      "name": "Отправить в Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1400,
+        200
+      ],
+      "parameters": {
+        "additionalFields": {
+          "caption": "=🎬 Клип готов: {{ $('Параметры').first().json.model }}, {{ $('Параметры').first().json.duration }} с, {{ $('Параметры').first().json.resolution }}\nЗапрос: {{ $('Параметры').first().json.prompt }}",
+          "fileName": "={{ $('Параметры').first().json.fileName + '.mp4' }}"
+        },
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "chatId": "REPLACE_WITH_YOUR_CHAT_ID",
+        "operation": "sendVideo",
+        "resource": "message"
+      }
+    }
+  ],
+  "connections": {
+    "Запрос видео": {
+      "main": [
+        [
+          {
+            "node": "Параметры",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Параметры": {
+      "main": [
+        [
+          {
+            "node": "Создать задачу",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Создать задачу": {
+      "main": [
+        [
+          {
+            "node": "Ждать",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ждать": {
+      "main": [
+        [
+          {
+            "node": "Проверить статус",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Проверить статус": {
+      "main": [
+        [
+          {
+            "node": "Готово?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Готово?": {
+      "main": [
+        [
+          {
+            "node": "Скачать файл",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Отказ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Скачать файл": {
+      "main": [
+        [
+          {
+            "node": "На Яндекс Диск",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Отправить в Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "На Яндекс Диск": {
+      "main": [
+        [
+          {
+            "node": "Итог",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Итог": {
+      "main": [
+        [
+          {
+            "node": "Ответ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Отказ?": {
+      "main": [
+        [
+          {
+            "node": "Ответ об ошибке",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Проверить статус",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  }
+}

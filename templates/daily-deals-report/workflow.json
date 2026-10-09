@@ -1,0 +1,146 @@
+{
+  "name": "ДЕМО · Ежедневный отчёт по сделкам в Telegram",
+  "nodes": [
+    {
+      "id": "4c8265c1-2bc2-4852-beff-d60e5bf61590",
+      "name": "Каждый день в 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6d626fa6-a625-468b-af67-a317010d970a",
+      "name": "Забрать сделки из CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example-crm.ru/v1/deals?period=yesterday",
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "bc69407c-e4f9-4a33-a75a-0a7295c8c249",
+      "name": "Свести отчёт",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "sum-total",
+              "name": "totalLeads",
+              "value": "={{ $json.items.length }}",
+              "type": "number"
+            },
+            {
+              "id": "sum-amount",
+              "name": "totalAmount",
+              "value": "={{ $json.items.reduce((s, i) => s + Number(i.amount || 0), 0) }}",
+              "type": "number"
+            },
+            {
+              "id": "sum-won",
+              "name": "wonDeals",
+              "value": "={{ $json.items.filter(i => i.status === \"won\").length }}",
+              "type": "number"
+            },
+            {
+              "id": "sum-period",
+              "name": "period",
+              "value": "={{ $now.minus({ days: 1 }).toFormat(\"dd.MM.yyyy\") }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a68c4098-0506-46bb-8a58-20f58a616315",
+      "name": "Отправить отчёт в Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "REPLACE_WITH_YOUR_CHAT_ID",
+        "text": "=📊 Отчёт за {{ $json.period }}\n\nЗаявок: {{ $json.totalLeads }}\nСумма: {{ $json.totalAmount }} ₽\nУспешных сделок: {{ $json.wonDeals }}",
+        "replyMarkup": "none"
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Каждый день в 09:00": {
+      "main": [
+        [
+          {
+            "node": "Забрать сделки из CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Забрать сделки из CRM": {
+      "main": [
+        [
+          {
+            "node": "Свести отчёт",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Свести отчёт": {
+      "main": [
+        [
+          {
+            "node": "Отправить отчёт в Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  }
+}

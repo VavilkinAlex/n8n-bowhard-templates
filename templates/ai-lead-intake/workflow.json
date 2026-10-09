@@ -1,0 +1,518 @@
+{
+  "name": "ШАБЛОН · ИИ-приёмщик заявок (сайт, Telegram, MAX, ВК, почта)",
+  "nodes": [
+    {
+      "id": "739ad876-507e-447d-bdb7-723bd18751c7",
+      "name": "Заявка из канала",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        80
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-lead-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "168d69ab-e69f-4f81-b673-b7dbac287714",
+      "name": "Настройки",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        80
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-base-url",
+              "name": "llm_base_url",
+              "value": "https://api.proxyapi.ru/openai/v1",
+              "type": "string"
+            },
+            {
+              "id": "cfg-model",
+              "name": "llm_model",
+              "value": "gpt-4o-mini",
+              "type": "string"
+            },
+            {
+              "id": "cfg-crm-url",
+              "name": "crm_url",
+              "value": "<__PLACEHOLDER_VALUE__URL приёма заявок в CRM (вебхук Битрикс24 / Google Sheets / Airtable)__>",
+              "type": "string"
+            },
+            {
+              "id": "cfg-chat",
+              "name": "manager_chat_id",
+              "value": "REPLACE_WITH_YOUR_CHAT_ID",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "620c5f56-561d-46af-a2b6-395b0b933717",
+      "name": "Нормализация заявки",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        448,
+        80
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "norm-lead-id",
+              "name": "lead_id",
+              "value": "={{ 'L-' + $now.toFormat('yyyyMMdd-HHmmss') }}",
+              "type": "string"
+            },
+            {
+              "id": "norm-channel",
+              "name": "channel",
+              "value": "={{ $json.body.channel || 'сайт' }}",
+              "type": "string"
+            },
+            {
+              "id": "norm-name",
+              "name": "name",
+              "value": "={{ $json.body.name || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "norm-contact",
+              "name": "contact",
+              "value": "={{ $json.body.contact || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "norm-message",
+              "name": "message",
+              "value": "={{ $json.body.message || $json.body.text || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "norm-company",
+              "name": "company",
+              "value": "={{ $json.body.company || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "norm-page",
+              "name": "page",
+              "value": "={{ $json.body.page || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "norm-attachment",
+              "name": "attachment_url",
+              "value": "={{ $json.body.attachment_url || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "norm-received",
+              "name": "received_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6a12f3bf-d3de-4e7c-bf07-e44ca7ecef8e",
+      "name": "Есть вложение?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        80
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.attachment_url }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "837ffb7d-0409-4fc3-afb1-1de28c471d4e",
+      "name": "Распознать вложение (ИИ)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        896,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Настройки').item.json.llm_base_url }}/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: $('Настройки').item.json.llm_model, messages: [ { role: 'user', content: [ { type: 'text', text: 'Извлеки из документа данные заявки: ФИО, телефон, email, что нужно сделать, бюджет, срок. Кратким списком, без выдумок. Если поля нет — напиши нет данных.' }, { type: 'image_url', image_url: { url: $json.attachment_url } } ] } ] } }}",
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          },
+          "timeout": 60000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ad639129-aa38-4e23-a9c1-8f3806a97e38",
+      "name": "Склеить ветки",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1120,
+        80
+      ],
+      "parameters": {
+        "mode": "append"
+      }
+    },
+    {
+      "id": "92db97e1-da13-4dad-9e3e-d597011ef639",
+      "name": "Собрать текст заявки",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1344,
+        80
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "col-lead-id",
+              "name": "lead_id",
+              "value": "={{ $('Нормализация заявки').item.json.lead_id }}",
+              "type": "string"
+            },
+            {
+              "id": "col-channel",
+              "name": "channel",
+              "value": "={{ $('Нормализация заявки').item.json.channel }}",
+              "type": "string"
+            },
+            {
+              "id": "col-name",
+              "name": "name",
+              "value": "={{ $('Нормализация заявки').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "col-contact",
+              "name": "contact",
+              "value": "={{ $('Нормализация заявки').item.json.contact }}",
+              "type": "string"
+            },
+            {
+              "id": "col-company",
+              "name": "company",
+              "value": "={{ $('Нормализация заявки').item.json.company }}",
+              "type": "string"
+            },
+            {
+              "id": "col-page",
+              "name": "page",
+              "value": "={{ $('Нормализация заявки').item.json.page }}",
+              "type": "string"
+            },
+            {
+              "id": "col-attachment",
+              "name": "attachment_url",
+              "value": "={{ $('Нормализация заявки').item.json.attachment_url }}",
+              "type": "string"
+            },
+            {
+              "id": "col-received",
+              "name": "received_at",
+              "value": "={{ $('Нормализация заявки').item.json.received_at }}",
+              "type": "string"
+            },
+            {
+              "id": "col-text",
+              "name": "text",
+              "value": "={{ 'НОВАЯ ЗАЯВКА\\nКанал: ' + $('Нормализация заявки').item.json.channel + '\\nИмя: ' + $('Нормализация заявки').item.json.name + '\\nКонтакт: ' + $('Нормализация заявки').item.json.contact + '\\nКомпания: ' + $('Нормализация заявки').item.json.company + '\\nСтраница: ' + $('Нормализация заявки').item.json.page + '\\nТекст обращения: ' + $('Нормализация заявки').item.json.message + '\\n\\nДАННЫЕ ИЗ ВЛОЖЕНИЯ:\\n' + ($json.choices ? $json.choices[0].message.content : 'вложения нет') }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "8b61eece-1d61-41f2-9b23-9b154453bacc",
+      "name": "Разбор заявки (ИИ)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1568,
+        80
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Настройки').item.json.llm_base_url }}/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: $('Настройки').item.json.llm_model, messages: [ { role: 'system', content: 'Ты — приёмщик заявок в студии автоматизации. Отвечай строго одним JSON-объектом без пояснений и без markdown. Поля: category (одно из: консультация, заказ, документы, жалоба, партнёрство), priority (высокий, средний или низкий), summary (1-2 предложения), what_needed (что нужно клиенту), missing (каких данных не хватает), draft_reply (вежливый черновик ответа клиенту от 3 до 5 предложений с уточняющим вопросом), needs_human (true или false).' }, { role: 'user', content: $json.text } ] } }}",
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          },
+          "timeout": 90000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "827c8623-3cd5-49a5-875f-75931f8e795d",
+      "name": "Карточка заявки",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        80
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const lead = $('Собрать текст заявки').first().json;\nconst raw = $input.first().json;\nconst content = raw && raw.choices && raw.choices[0] && raw.choices[0].message ? raw.choices[0].message.content : '';\nlet d = {};\ntry {\n  const m = String(content).match(/\\{[\\s\\S]*\\}/);\n  d = JSON.parse(m ? m[0] : content);\n} catch (e) {\n  d = { category: 'не разобрано', priority: 'средний', summary: String(content), what_needed: '', missing: '', draft_reply: '', needs_human: true };\n}\nreturn [{ json: { lead_id: lead.lead_id, received_at: lead.received_at, channel: lead.channel, name: lead.name, contact: lead.contact, company: lead.company, page: lead.page, attachment_url: lead.attachment_url, category: d.category || 'не разобрано', priority: d.priority || 'средний', summary: d.summary || '', what_needed: d.what_needed || '', missing: d.missing || '', draft_reply: d.draft_reply || '', needs_human: d.needs_human === true } }];"
+      }
+    },
+    {
+      "id": "5269bdd8-2688-4729-a7c5-f44ad0fff2e4",
+      "name": "Записать в CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2016,
+        80
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Настройки').item.json.crm_url }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "6e6592de-1cc3-4349-853e-e04c8a58c081",
+      "name": "Пинг менеджеру",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2240,
+        80
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Настройки').item.json.manager_chat_id }}",
+        "text": "={{ '🔔 НОВАЯ ЗАЯВКА ' + $('Карточка заявки').item.json.lead_id + '\\nКанал: ' + $('Карточка заявки').item.json.channel + '\\nКлиент: ' + $('Карточка заявки').item.json.name + ' (' + $('Карточка заявки').item.json.contact + ')\\nКатегория: ' + $('Карточка заявки').item.json.category + ' · Приоритет: ' + $('Карточка заявки').item.json.priority + '\\nСуть: ' + $('Карточка заявки').item.json.summary + '\\nНе хватает: ' + ($('Карточка заявки').item.json.missing || '—') + '\\n\\nЧерновик ответа:\\n' + $('Карточка заявки').item.json.draft_reply }}",
+        "additionalFields": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "188b1fbd-a410-463b-9a5b-9f0368a2c936",
+      "name": "Ответ каналу",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2464,
+        80
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, lead_id: $('Карточка заявки').item.json.lead_id, category: $('Карточка заявки').item.json.category, priority: $('Карточка заявки').item.json.priority, draft_reply: $('Карточка заявки').item.json.draft_reply, needs_human: $('Карточка заявки').item.json.needs_human } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Заявка из канала": {
+      "main": [
+        [
+          {
+            "node": "Настройки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Настройки": {
+      "main": [
+        [
+          {
+            "node": "Нормализация заявки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Нормализация заявки": {
+      "main": [
+        [
+          {
+            "node": "Есть вложение?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Есть вложение?": {
+      "main": [
+        [
+          {
+            "node": "Распознать вложение (ИИ)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Склеить ветки",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Распознать вложение (ИИ)": {
+      "main": [
+        [
+          {
+            "node": "Склеить ветки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Склеить ветки": {
+      "main": [
+        [
+          {
+            "node": "Собрать текст заявки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Собрать текст заявки": {
+      "main": [
+        [
+          {
+            "node": "Разбор заявки (ИИ)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Разбор заявки (ИИ)": {
+      "main": [
+        [
+          {
+            "node": "Карточка заявки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Карточка заявки": {
+      "main": [
+        [
+          {
+            "node": "Записать в CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Записать в CRM": {
+      "main": [
+        [
+          {
+            "node": "Пинг менеджеру",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Пинг менеджеру": {
+      "main": [
+        [
+          {
+            "node": "Ответ каналу",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  }
+}

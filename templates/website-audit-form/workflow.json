@@ -1,0 +1,112 @@
+{
+  "name": "Аудит приёма заявок: публичная форма",
+  "nodes": [
+    {
+      "id": "12ca692b-d33e-4c72-b948-e41bc63b1ded",
+      "name": "Запрос аудита (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "site-audit",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "8054a64e-07a1-47b6-8145-34196a96fc3b",
+      "name": "Проверить сайт (CRM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-INTERNAL-HOST/api/audit",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $json.body.url }}"
+            },
+            {
+              "name": "contact",
+              "value": "={{ $json.body.contact }}"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.body.name }}"
+            },
+            {
+              "name": "client_ip",
+              "value": "={{ $json.headers['x-forwarded-for'] || '' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "b2a27bda-91b6-47a8-b746-3517bba728f3",
+      "name": "Ответ странице",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Запрос аудита (POST)": {
+      "main": [
+        [
+          {
+            "node": "Проверить сайт (CRM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Проверить сайт (CRM)": {
+      "main": [
+        [
+          {
+            "node": "Ответ странице",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  }
+}
