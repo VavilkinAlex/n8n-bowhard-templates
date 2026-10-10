@@ -35,6 +35,17 @@ reporting on n8n, Voximplant and the Yandex ecosystem.
 - **AI where it pays off.** LLM calls are used for classification and knowledge-base answers, and plain
   expressions/Code nodes for the rest.
 
+## Bowhard services for n8n workflows
+
+Two services the studio runs next to these templates, both useful as a step in an n8n flow:
+
+- **[Audio and video to text](https://bowhard.ru/rasshifrovka)** — upload a recording (or a public link, up to
+  2 GB) and get plain text, `.srt` subtitles and word-level `.json` timecodes. 15 minutes free every day,
+  then 25 ₽ per hour of audio; files are deleted after 24 hours. Handy for call recordings and voice messages
+  before they reach an LLM node.
+- **[Text to speech](https://bowhard.ru/ozvuchka)** — Russian voice-over for notifications and reports:
+  5 000 characters free, 3.9 ₽ per 1 000 characters.
+
 ## How to use a template
 
 1. Open the template folder and download `workflow.json` (or copy the raw file).
